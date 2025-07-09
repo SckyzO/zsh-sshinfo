@@ -17,7 +17,7 @@ A simple Zsh plugin that displays resolved SSH connection details (like the fina
 1.  Clone this repository into your Oh My Zsh custom plugins directory:
 
     ```bash
-    git clone https://github.com/your-username/zsh-sshinfo.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-sshinfo
+    git clone https://github.com/SckyzO/zsh-sshinfo.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-sshinfo
     ```
 
 2.  Add `zsh-sshinfo` to the plugins list in your `~/.zshrc` file:
@@ -37,7 +37,7 @@ A simple Zsh plugin that displays resolved SSH connection details (like the fina
 1.  Clone this repository somewhere on your machine:
 
     ```bash
-    git clone https://github.com/your-username/zsh-sshinfo.git ~/path/to/zsh-sshinfo
+    git clone https://github.com/SckyzO/zsh-sshinfo.git ~/path/to/zsh-sshinfo
     ```
 
 2.  Source the `zsh-sshinfo.plugin.zsh` file in your `~/.zshrc`:

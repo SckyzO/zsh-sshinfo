@@ -1,23 +1,31 @@
 # Oh My Zsh sshinfo plugin
 #
-# A plugin that displays SSH connection information before connecting.
+# A plugin that displays resolved SSH connection information before connecting.
 
 # Check if the function exists to avoid re-definition
 if ! command -v sshinfo >/dev/null 2>&1; then
     sshinfo() {
-        # Ensure there is a target to connect to
-        if [ -z "$1" ]; then
-            echo "Usage: ssh <hostname>"
-            return 1
+        # --- Argument Parsing: Find the hostname ---
+        # The hostname is usually the last argument that doesn't start with a hyphen.
+        local target=""
+        for arg in "$@"; do
+            if [[ "$arg" != -* ]]; then
+                target="$arg"
+            fi
+        done
+
+        # If no target is found, print usage and exit.
+        if [ -z "$target" ]; then
+            echo "Usage: ssh [options] <hostname>"
+            # Use `command ssh` to let the original command handle the error.
+            command ssh "$@"
+            return
         fi
 
-        local target="$1"
-        local -A params
-        local -a locals
-
-        # Define colors for output, use tput for compatibility
+        # --- Color Definitions ---
         local GREEN BLUE YELLOW RED RESET
         if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
+            # Use tput for better terminal compatibility
             GREEN="$(tput setaf 2)"
             BLUE="$(tput setaf 4)"
             YELLOW="$(tput setaf 3)"
@@ -25,60 +33,77 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             RESET="$(tput sgr0)"
         fi
 
-        # Use ssh -G to get the computed configuration.
+        # --- SSH Configuration Fetching ---
+        # Use `ssh -G` to get the computed configuration.
         # Redirect stderr to /dev/null to suppress errors if the host is not found.
         local ssh_output
         if ! ssh_output=$(ssh -G "$target" 2>/dev/null) || [ -z "$ssh_output" ]; then
             echo "${RED}❌ Host '$target' not found or error in SSH configuration.${RESET}"
-            # Fallback to regular ssh command to let it handle the error message
+            # Fallback to the regular ssh command to let it show the native error.
             command ssh "$@"
-            return
+            return $?
         fi
 
-        # Populate the associative array with parameters.
+        # --- Key-Value Parsing ---
+        local -A params
+        local -A multi_value_params
+        
+        # These keys can appear multiple times and should be grouped.
+        local multi_value_keys=("localforward" "remoteforward" "certificatefile" "identityfile")
+
         while IFS= read -r line; do
-            # Use parameter expansion for robustness
             local keyword="${line%% *}"
             local value="${line#* }"
-            # Make keyword lowercase to standardize
-            keyword="${keyword:l}"
+            keyword="${keyword:l}" # Standardize to lowercase
 
-            if [[ "$keyword" == "localforward" ]]; then
-                locals+=("$value")
+            # Check if the key is a multi-value key
+            if [[ " ${multi_value_keys[*]} " =~ " ${keyword} " ]]; then
+                multi_value_params[$keyword]+="$value\n"
             else
                 params[$keyword]="$value"
             fi
         done <<< "$ssh_output"
 
-        # Define the order and display names for parameters
-        local -A display_names=(
-            [hostname]="HostName" [port]="Port" [user]="User"
-            [proxyjump]="ProxyJump" [proxycommand]="ProxyCommand" [dynamicforward]="DynamicForward"
-        )
-        local display_order=("hostname" "port" "user" "proxyjump" "proxycommand" "dynamicforward")
-
+        # --- Displaying Configuration ---
         echo "${GREEN}✅ Connecting to: $target${RESET}"
-        for key in "${display_order[@]}"; do
-            if [[ -n "${params[$key]}" ]]; then
-                printf "  ${BLUE}↪ %-15s:${RESET} %s\n" "${display_names[$key]}" "${params[$key]}"
+
+        # Get all unique keys and sort them alphabetically
+        local sorted_keys
+        sorted_keys=(${(k)params})
+        
+        for key in ${(o)sorted_keys}; do
+            # Exclude keys that are not very useful for the user to see
+            if [[ "$key" == "exitonforwardfailure" ]]; then
+                continue
             fi
+            
+            # Format the key for display (e.g., "hostname" -> "HostName")
+            local display_key
+            display_key="$(tr '[:lower:]' '[:upper:]' <<< ${key:0:1})${key:1}"
+            
+            printf "  ${BLUE}↪ %-20s:${RESET} %s\n" "$display_key" "${params[$key]}"
         done
 
-        if [[ ${#locals[@]} -gt 0 ]]; then
-            printf "  ${BLUE}↪ %-15s:${RESET}\n" "LocalForwards"
-            for lf in "${locals[@]}"; do
-                # Nicer formatting for local forwards
-                printf "      ${YELLOW}- %s${RESET}\n" "$lf"
+        # Display multi-value parameters
+        for key in ${(k)multi_value_params}; do
+            local display_key
+            display_key="$(tr '[:lower:]' '[:upper:]' <<< ${key:0:1})${key:1}s" # Pluralize
+            
+            printf "  ${BLUE}↪ %-20s:${RESET}\n" "$display_key"
+            # Trim trailing newline before printing
+            printf "%s" "${multi_value_params[$key]%\\n}" | while IFS= read -r line; do
+                printf "      ${YELLOW}- %s${RESET}\n" "$line"
             done
-        fi
+        done
 
         echo
-        # Use `command ssh` to call the original ssh command, not the alias itself.
+        # Use `command ssh` to call the original ssh command, not the alias/function itself.
         command ssh "$@"
     }
 fi
 
-# Define aliases if they don't already exist
+# --- Alias Definitions ---
+# Define aliases only if they don't already exist to avoid conflicts.
 if ! command -v s >/dev/null 2>&1; then
     alias s='sshinfo'
 fi
