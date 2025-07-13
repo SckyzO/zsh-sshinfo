@@ -2,11 +2,9 @@
 #
 # A plugin that displays resolved SSH connection information before connecting.
 
-# Check if the function exists to avoid re-definition
 if ! command -v sshinfo >/dev/null 2>&1; then
     sshinfo() {
         # --- Argument Parsing: Find the hostname ---
-        # The hostname is usually the last argument that doesn't start with a hyphen.
         local target=""
         for arg in "$@"; do
             if [[ "$arg" != -* ]]; then
@@ -14,10 +12,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             fi
         done
 
-        # If no target is found, print usage and exit.
         if [ -z "$target" ]; then
-            echo "Usage: ssh [options] <hostname>"
-            # Use `command ssh` to let the original command handle the error.
             command ssh "$@"
             return
         fi
@@ -25,7 +20,6 @@ if ! command -v sshinfo >/dev/null 2>&1; then
         # --- Color Definitions ---
         local GREEN BLUE YELLOW RED RESET
         if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
-            # Use tput for better terminal compatibility
             GREEN="$(tput setaf 2)"
             BLUE="$(tput setaf 4)"
             YELLOW="$(tput setaf 3)"
@@ -34,81 +28,112 @@ if ! command -v sshinfo >/dev/null 2>&1; then
         fi
 
         # --- SSH Configuration Fetching ---
-        # Use `ssh -G` to get the computed configuration.
-        # Redirect stderr to /dev/null to suppress errors if the host is not found.
         local ssh_output
-        if ! ssh_output=$(ssh -G "$target" 2>/dev/null) || [ -z "$ssh_output" ]; then
+        if ! ssh_output=$(command ssh -G "$target" 2>/dev/null) || [ -z "$ssh_output" ]; then
             echo "${RED}❌ Host '$target' not found or error in SSH configuration.${RESET}"
-            # Fallback to the regular ssh command to let it show the native error.
             command ssh "$@"
             return $?
         fi
 
-        # --- Key-Value Parsing ---
-        local -A params
-        local -A multi_value_params
+        # --- Whitelist & Data Extraction ---
+        local -A config
+        local -a identity_files local_forwards remote_forwards
         
-        # These keys can appear multiple times and should be grouped.
-        local multi_value_keys=("localforward" "remoteforward" "certificatefile" "identityfile")
+        local whitelist=("user" "hostname" "port" "proxyjump" "proxycommand" "dynamicforward")
 
         while IFS= read -r line; do
-            local keyword="${line%% *}"
+            local key="${line%% *}"
             local value="${line#* }"
-            keyword="${keyword:l}" # Standardize to lowercase
+            key="${key:l}"
 
-            # Check if the key is a multi-value key
-            if [[ " ${multi_value_keys[*]} " =~ " ${keyword} " ]]; then
-                multi_value_params[$keyword]+="$value\n"
-            else
-                params[$keyword]="$value"
+            if [[ " ${whitelist[*]} " =~ " ${key} " ]]; then
+                config[$key]=$value
+            elif [[ "$key" == "identityfile" ]]; then
+                identity_files+=("$value")
+            elif [[ "$key" == "localforward" ]]; then
+                local_forwards+=("$value")
+            elif [[ "$key" == "remoteforward" ]]; then
+                remote_forwards+=("$value")
             fi
         done <<< "$ssh_output"
 
-        # --- Displaying Configuration ---
+        # --- Pretty Display ---
         echo "${GREEN}✅ Connecting to: $target${RESET}"
-
-        # Get all unique keys and sort them alphabetically
-        local sorted_keys
-        sorted_keys=(${(k)params})
         
-        for key in ${(o)sorted_keys}; do
-            # Exclude keys that are not very useful for the user to see
-            if [[ "$key" == "exitonforwardfailure" ]]; then
-                continue
+        local has_connection_info=0
+        local has_auth_info=0
+        local has_proxy_info=0
+
+        # Check which sections have content
+        [[ -n "${config[user]}" || -n "${config[hostname]}" || -n "${config[port]}" ]] && has_connection_info=1
+        (( ${#identity_files[@]} > 0 )) && has_auth_info=1
+        [[ -n "${config[proxyjump]}" || -n "${config[proxycommand]}" || -n "${config[dynamicforward]}" || ${#local_forwards[@]} -gt 0 || ${#remote_forwards[@]} -gt 0 ]] && has_proxy_info=1
+        
+        local total_sections=$((has_connection_info + has_auth_info + has_proxy_info))
+        local current_section=0
+
+        # --- Connection Section ---
+        if (( has_connection_info )); then
+            current_section=$((current_section + 1))
+            local box_char_top="┌"
+            local box_char_mid="│"
+            if (( current_section < total_sections )); then
+                box_char_top="├"
             fi
             
-            # Format the key for display (e.g., "hostname" -> "HostName")
-            local display_key
-            display_key="$(tr '[:lower:]' '[:upper:]' <<< ${key:0:1})${key:1}"
-            
-            printf "  ${BLUE}↪ %-20s:${RESET} %s\n" "$display_key" "${params[$key]}"
-        done
+            echo
+            echo "  ${BLUE}${box_char_top}─[ Connection ]${RESET}"
+            [[ -n "${config[user]}" ]]     && printf "  ${BLUE}${box_char_mid}${RESET}  👤 User:          %s\n" "${config[user]}"
+            [[ -n "${config[hostname]}" ]] && printf "  ${BLUE}${box_char_mid}${RESET}  🌐 HostName:       %s\n" "${config[hostname]}"
+            [[ -n "${config[port]}" ]]     && printf "  ${BLUE}${box_char_mid}${RESET}  🔌 Port:           %s\n" "${config[port]}"
+        fi
 
-        # Display multi-value parameters
-        for key in ${(k)multi_value_params}; do
-            local display_key
-            display_key="$(tr '[:lower:]' '[:upper:]' <<< ${key:0:1})${key:1}s" # Pluralize
+        # --- Authentication Section ---
+        if (( has_auth_info )); then
+            current_section=$((current_section + 1))
+            local box_char_top="┌"
+            local box_char_mid="│"
+            if (( current_section > 1 && current_section < total_sections )); then
+                box_char_top="├"
+            elif (( current_section > 1 )); then
+                 box_char_top="└"
+            fi
             
-            printf "  ${BLUE}↪ %-20s:${RESET}\n" "$display_key"
-            # Trim trailing newline before printing
-            printf "%s" "${multi_value_params[$key]%\\n}" | while IFS= read -r line; do
-                printf "      ${YELLOW}- %s${RESET}\n" "$line"
-            done
-        done
+            echo
+            echo "  ${BLUE}${box_char_top}─[ Authentication ]${RESET}"
+            if (( ${#identity_files[@]} > 1 )); then
+                # Multiple identity files usually means it's the default list
+                printf "  ${BLUE}${box_char_mid}${RESET}  🔑 IdentityFile:  %s\n" "Default (~/.ssh/id_*)"
+            else
+                # A single identity file means it was likely specified in the config
+                printf "  ${BLUE}${box_char_mid}${RESET}  🔑 IdentityFile:  %s\n" "${identity_files[1]}"
+            fi
+        fi
+
+        # --- Tunnels & Proxies Section ---
+        if (( has_proxy_info )); then
+            current_section=$((current_section + 1))
+            local box_char_top="┌"
+            local box_char_mid="│"
+            if (( current_section > 1 )); then
+                box_char_top="└"
+            fi
+
+            echo
+            echo "  ${BLUE}${box_char_top}─[ Tunnels & Proxies ]${RESET}"
+            [[ -n "${config[proxyjump]}" ]]      && printf "  ${BLUE}${box_char_mid}${RESET}  ↪ ProxyJump:      %s\n" "${config[proxyjump]}"
+            [[ -n "${config[proxycommand]}" ]]   && printf "  ${BLUE}${box_char_mid}${RESET}  ↪ ProxyCommand:   %s\n" "${config[proxycommand]}"
+            [[ -n "${config[dynamicforward]}" ]] && printf "  ${BLUE}${box_char_mid}${RESET}  ↪ DynamicForward: %s\n" "${config[dynamicforward]}"
+            for lf in "${local_forwards[@]}";  do printf "  ${BLUE}${box_char_mid}${RESET}  ↪ LocalForward:   %s\n" "$lf"; done
+            for rf in "${remote_forwards[@]}"; do printf "  ${BLUE}${box_char_mid}${RESET}  ↪ RemoteForward:  %s\n" "$rf"; done
+        fi
 
         echo
-        # Use `command ssh` to call the original ssh command, not the alias/function itself.
         command ssh "$@"
     }
 fi
 
 # --- Alias Definitions ---
-# Define aliases only if they don't already exist to avoid conflicts.
-if ! command -v s >/dev/null 2>&1; then
-    alias s='sshinfo'
-fi
-if ! command -v connect >/dev/null 2>&1; then
-    alias connect='sshinfo'
-fi
-# This is the main alias. It should be defined last to ensure it overrides any other alias.
+if ! command -v s >/dev/null 2>&1; then alias s='sshinfo'; fi
+if ! command -v connect >/dev/null 2>&1; then alias connect='sshinfo'; fi
 alias ssh='sshinfo'
