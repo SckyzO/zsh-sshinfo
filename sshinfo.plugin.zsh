@@ -4,7 +4,6 @@
 
 if ! command -v sshinfo >/dev/null 2>&1; then
     sshinfo() {
-        # --- Argument Parsing: Find the hostname ---
         local target=""
         for arg in "$@"; do
             if [[ "$arg" != -* ]]; then
@@ -17,7 +16,6 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             return
         fi
 
-        # --- Color Definitions ---
         local GREEN BLUE YELLOW RED RESET
         if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
             GREEN="$(tput setaf 2)"
@@ -27,7 +25,6 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             RESET="$(tput sgr0)"
         fi
 
-        # --- SSH Configuration Fetching ---
         local ssh_output
         if ! ssh_output=$(command ssh -G "$target" 2>/dev/null) || [ -z "$ssh_output" ]; then
             echo "${RED}❌ Host '$target' not found or error in SSH configuration.${RESET}"
@@ -35,7 +32,6 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             return $?
         fi
 
-        # --- Whitelist & Data Extraction ---
         local -A config
         local -a identity_files local_forwards remote_forwards
         
@@ -57,14 +53,12 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             fi
         done <<< "$ssh_output"
 
-        # --- Pretty Display ---
         echo "${GREEN}✅ Connecting to: $target${RESET}"
         
         local has_connection_info=0
         local has_auth_info=0
         local has_proxy_info=0
 
-        # Check which sections have content
         [[ -n "${config[user]}" || -n "${config[hostname]}" || -n "${config[port]}" ]] && has_connection_info=1
         (( ${#identity_files[@]} > 0 )) && has_auth_info=1
         [[ -n "${config[proxyjump]}" || -n "${config[proxycommand]}" || -n "${config[dynamicforward]}" || ${#local_forwards[@]} -gt 0 || ${#remote_forwards[@]} -gt 0 ]] && has_proxy_info=1
@@ -72,7 +66,6 @@ if ! command -v sshinfo >/dev/null 2>&1; then
         local total_sections=$((has_connection_info + has_auth_info + has_proxy_info))
         local current_section=0
 
-        # --- Connection Section ---
         if (( has_connection_info )); then
             current_section=$((current_section + 1))
             local box_char_top="┌"
@@ -88,7 +81,6 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             [[ -n "${config[port]}" ]]     && printf "  ${BLUE}${box_char_mid}${RESET}  🔌 Port:           %s\n" "${config[port]}"
         fi
 
-        # --- Authentication Section ---
         if (( has_auth_info )); then
             current_section=$((current_section + 1))
             local box_char_top="┌"
@@ -102,15 +94,14 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             echo
             echo "  ${BLUE}${box_char_top}─[ Authentication ]${RESET}"
             if (( ${#identity_files[@]} > 1 )); then
-                # Multiple identity files usually means it's the default list
+                # Multiple identity files usually means it's the default list.
                 printf "  ${BLUE}${box_char_mid}${RESET}  🔑 IdentityFile:  %s\n" "Default (~/.ssh/id_*)"
             else
-                # A single identity file means it was likely specified in the config
+                # A single identity file means it was likely specified in the config.
                 printf "  ${BLUE}${box_char_mid}${RESET}  🔑 IdentityFile:  %s\n" "${identity_files[1]}"
             fi
         fi
 
-        # --- Tunnels & Proxies Section ---
         if (( has_proxy_info )); then
             current_section=$((current_section + 1))
             local box_char_top="┌"
@@ -133,7 +124,13 @@ if ! command -v sshinfo >/dev/null 2>&1; then
     }
 fi
 
-# --- Alias Definitions ---
-if ! command -v s >/dev/null 2>&1; then alias s='sshinfo'; fi
-if ! command -v connect >/dev/null 2>&1; then alias connect='sshinfo'; fi
+if ! command -v s >/dev/null 2>&1; then
+    alias s='sshinfo'
+fi
+if ! command -v connect >/dev/null 2>&1; then
+    alias connect='sshinfo'
+fi
+
+# This is the main alias that enables the plugin's functionality.
+# It intentionally overrides the default `ssh` command.
 alias ssh='sshinfo'

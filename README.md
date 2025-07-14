@@ -1,8 +1,8 @@
-# Zsh SSHInfo Plugin
+# 🔌 Zsh SSHInfo Plugin
 
 A simple Zsh plugin that displays resolved SSH connection details (like the final hostname, port, user, and proxies) before connecting. This is useful for verifying your SSH configuration, especially when dealing with complex setups involving aliases, proxies, or multiple configuration files.
 
-## Features
+## ✨ Features
 
 -   Shows the real `HostName`, `Port`, `User`, and any `ProxyJump` or `ProxyCommand` before connecting.
 -   Supports `LocalForward` and `DynamicForward` directives.
@@ -10,7 +10,7 @@ A simple Zsh plugin that displays resolved SSH connection details (like the fina
 -   Gracefully handles hosts that are not found or have configuration errors.
 -   Clean, colorized output for better readability.
 
-## Installation
+## 🛠️ Installation
 
 ### For Oh My Zsh users
 
@@ -48,7 +48,7 @@ A simple Zsh plugin that displays resolved SSH connection details (like the fina
 
 3.  Restart your terminal.
 
-## Usage
+## 🚀 Usage
 
 Simply use the `ssh` command as you normally would. The plugin will automatically display the connection information before initiating the SSH session.
 
@@ -63,6 +63,6 @@ s my-server
 connect my-server
 ```
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
