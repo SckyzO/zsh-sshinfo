@@ -1,67 +1,70 @@
-# 🔌 Zsh SSHInfo Plugin
+# sshinfo for Oh My Zsh 🚀
 
-A simple Zsh plugin that displays resolved SSH connection details (like the final hostname, port, user, and proxies) before connecting. This is useful for verifying your SSH configuration, especially when dealing with complex setups involving aliases, proxies, or multiple configuration files.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+`sshinfo` is a plugin for [Oh My Zsh](https://ohmyz.sh/) that enhances your `ssh` experience in two main ways:
+
+1.  **✅ Connection Info Display**: Before connecting, it shows you a clear, concise summary of the configuration that will be used (user, port, identity key, proxy, etc.). No more blind connections!
+2.  **⚡️ Smart Autocompletion**: It provides powerful and comprehensive `Tab` completion for all your SSH hosts.
+
+---
 
 ## ✨ Features
 
--   Shows the real `HostName`, `Port`, `User`, and any `ProxyJump` or `ProxyCommand` before connecting.
--   Supports `LocalForward` and `DynamicForward` directives.
--   Automatically aliases `ssh`, `s`, and `connect` to the `sshinfo` function.
--   Gracefully handles hosts that are not found or have configuration errors.
--   Clean, colorized output for better readability.
+-   **Pre-connection Visualization**: Displays connection details (User, HostName, Port, ProxyJump, etc.) right before the connection is established.
+-   **Comprehensive Autocompletion**: Press `Tab` after `ssh` (or the `s`/`connect` aliases) to list all available hosts from:
+    -   Your `~/.ssh/config` file.
+    -   All files included via the `Include` directive (even recursively!).
+    -   Your `~/.ssh/known_hosts` file (while ignoring unreadable hashed hosts).
+-   **Convenient Aliases**: Comes with `s` and `connect` aliases for even faster access.
+-   **Customizable**: You can choose to override the base `ssh` command by uncommenting a line in the plugin.
+
+---
 
 ## 🛠️ Installation
 
-### For Oh My Zsh users
-
-1.  Clone this repository into your Oh My Zsh custom plugins directory:
-
+1.  **Clone this repository** into your Oh My Zsh custom plugins directory:
     ```bash
-    git clone https://github.com/SckyzO/zsh-sshinfo.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-sshinfo
+    git clone https://github.com/sckyzo/zsh-sshinfo.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/sshinfo
     ```
 
-2.  Add `zsh-sshinfo` to the plugins list in your `~/.zshrc` file:
-
+2.  **Activate the plugin** by adding it to the plugins list in your `~/.zshrc` file:
     ```zsh
-    plugins=(... zsh-sshinfo)
+    plugins=(... sshinfo)
     ```
+    *(Note: If you use the standard `ssh` plugin, make sure `sshinfo` is listed **after** it to ensure its autocompletion takes priority).*
 
-3.  Restart your terminal or source your `~/.zshrc` file:
-
+3.  **Reload your Zsh configuration** for the changes to take effect:
     ```bash
-    source ~/.zshrc
+    omz reload
     ```
 
-### Manual Installation
-
-1.  Clone this repository somewhere on your machine:
-
-    ```bash
-    git clone https://github.com/SckyzO/zsh-sshinfo.git ~/path/to/zsh-sshinfo
-    ```
-
-2.  Source the `zsh-sshinfo.plugin.zsh` file in your `~/.zshrc`:
-
-    ```zsh
-    source ~/path/to/zsh-sshinfo/zsh-sshinfo.plugin.zsh
-    ```
-
-3.  Restart your terminal.
+---
 
 ## 🚀 Usage
 
-Simply use the `ssh` command as you normally would. The plugin will automatically display the connection information before initiating the SSH session.
+Simply use `ssh`, `s`, or `connect` as you normally would.
 
-```bash
-ssh my-server
-```
+-   **To see connection info**:
+    ```bash
+    s my-remote-server
+    ```
+    ![Example Output](https://user-images.githubusercontent.com/example.png) *(Note: You may want to replace this with a real screenshot of the plugin in action)*
 
-You can also use the aliases `s` or `connect`:
+-   **To use autocompletion**:
+    ```bash
+    ssh <Tab>
+    # or
+    s my-remote-<Tab>
+    ```
 
-```bash
-s my-server
-connect my-server
-```
+---
+
+## 🤝 Contributing
+
+Suggestions and contributions are always welcome! Feel free to open an issue or a pull request.
+
+---
 
 ## 📄 License
 
