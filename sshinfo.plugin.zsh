@@ -88,7 +88,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             
             echo
             echo "  ${BLUE}${box_char_top}─[ Connection ]${RESET}"
-            [[ -n "${config[user]}" ]]     && printf "  ${BLUE}${box_char_mid}${RESET}  👤 User:          %s\n" "${config[user]}"
+            [[ -n "${config[user]}" ]]     && printf "  ${BLUE}${box_char_mid}${RESET}  👤 User:           %s\n" "${config[user]}"
             [[ -n "${config[hostname]}" ]] && printf "  ${BLUE}${box_char_mid}${RESET}  🌐 HostName:       %s\n" "${config[hostname]}"
             [[ -n "${config[port]}" ]]     && printf "  ${BLUE}${box_char_mid}${RESET}  🔌 Port:           %s\n" "${config[port]}"
         fi
