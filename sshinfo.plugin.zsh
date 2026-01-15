@@ -74,8 +74,9 @@ if ! command -v sshinfo >/dev/null 2>&1; then
         local __current_hop=""
         if [[ -n "${__config[proxyjump]}" ]]; then
             __current_hop="${__config[proxyjump]%%,*}"
-        else
-            local -a __args=(${(z)${__config[proxycommand]}})
+        elif [[ -n "${__config[proxycommand]}" ]]; then
+            local -a __args
+            __args=(${(z)$__config[proxycommand]})
             if [[ "${__args[1]}" == "ssh" ]]; then
                 for arg in "${__args[@]:1}"; do
                     [[ "$arg" == -* || "$arg" == *%* || "$arg" == "nc" || "$arg" == "proxyconnect" ]] && continue
@@ -106,11 +107,15 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                 if [[ -n "$__next_jump" ]]; then
                     __next_hop="${__next_jump%%,*}"
                 elif [[ -n "$__next_cmd" ]]; then
-                    local -a __h_args=(${(z)$__next_cmd})
-                    [[ "${__h_args[1]}" == "ssh" ]] && for h_arg in "${__h_args[@]:1}"; do
-                        [[ "$h_arg" == -* || "$h_arg" == *%* || "$h_arg" == "nc" || "$h_arg" == "proxyconnect" ]] && continue
-                        __next_hop="$h_arg"; break
-                    done
+                    local -a __h_args
+                    __h_args=(${(z)__next_cmd})
+                    if [[ "${__h_args[1]}" == "ssh" ]]; then
+                        for h_arg in "${__h_args[@]:1}"; do
+                            [[ "$h_arg" == -* || "$h_arg" == *%* || "$h_arg" == "nc" || "$h_arg" == "proxyconnect" ]] && continue
+                            __next_hop="$h_arg"
+                            break
+                        done
+                    fi
                 fi
                 [[ -z "$__next_hop" ]] && break
                 __current_hop="$__next_hop"
@@ -119,7 +124,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
 
         echo "\n ${GREEN}🟢${RESET} ${C_BOLD}SSH Connection to ${C_CYAN}${__target}${RESET}"
         
-        local __has_conn=0 __has_auth=0 __has_proxy=0
+        local __has_conn=0 __has_auth=0 __has_proxy_info=0
         [[ -n "${__config[user]}" || -n "${__config[hostname]}" || -n "${__config[port]}" ]] && __has_conn=1
         (( ${#__identity_files[@]} > 0 )) && __has_auth=1
         [[ -n "${__config[proxyjump]}" || -n "${__config[proxycommand]}" || -n "${__config[dynamicforward]}" || ${#__local_forwards[@]} -gt 0 || ${#__remote_forwards[@]} -gt 0 ]] && __has_proxy_info=1
@@ -131,7 +136,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             __cur_sec=$((__cur_sec + 1))
             echo " ${C_GRAY}╭──${RESET} ${C_PURPLE}${C_BOLD}CONNECTION${RESET}"
             [[ -n "${__config[user]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}👤${RESET} User     : ${C_BOLD}%s${RESET}\n" "${__config[user]}"
-            [[ -n "${__config[hostname]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}${__target_ip:+(}$__target_ip)${RESET}\n" "${__config[hostname]}"
+            [[ -n "${__config[hostname]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}${__target_ip:+( $__target_ip)}${RESET}\n" "${__config[hostname]}"
             [[ -n "${__config[port]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔌${RESET} Port     : %s\n" "${__config[port]}"
             echo " ${C_GRAY}│${RESET}"
         fi
@@ -198,10 +203,11 @@ _sshinfo_find_all_config_files() {
         while IFS= read -r line; do
             if [[ ${line:l} =~ '^[[:space:]]*include[[:space:]]' ]]; then
                 local patterns_str=${line#*[iI][nN][cC][lL][uU][dD][eE] }
-                local -a patterns=("${(z)$patterns_str}")
+                local -a patterns
+                patterns=("${(z)$patterns_str}")
                 for pattern in "${patterns[@]}"; do
                     local full_pattern
-                    [[ "$pattern" != /* && "$pattern" != ~* ]] && full_pattern="$config_dir/$pattern" || full_pattern="${pattern/#	/$HOME}"
+                    [[ "$pattern" != /* && "$pattern" != ~* ]] && full_pattern="$config_dir/$pattern" || full_pattern="${pattern/#\~/$HOME}"
                     local -a found_files=(${~full_pattern}(N))
                     for f in "${found_files[@]}"; do
                         local found=0
