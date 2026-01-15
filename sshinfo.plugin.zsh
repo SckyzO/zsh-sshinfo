@@ -58,9 +58,11 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                 local -a args=(${(z)config[proxycommand]})
                 if [[ "${args[1]}" == "ssh" ]]; then
                     for arg in "${args[@]:1}"; do
-                        [[ "$arg" != -* && "$arg" != *%* ]] && current_hop="$arg"
+                        [[ "$arg" == -* || "$arg" == *%* || "$arg" == "nc" || "$arg" == "proxyconnect" ]] && continue
+                        current_hop="$arg"
+                        break
                     done
-                    [[ -n "$current_hop" ]] && full_chain="ssh($current_hop)"
+                    [[ -n "$current_hop" ]] && full_chain="$current_hop"
                 fi
             fi
 
@@ -79,23 +81,25 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                         [[ "${key:l}" == "proxyjump" ]] && next_jump="$val" && break
                         [[ "${key:l}" == "proxycommand" ]] && next_cmd="$val" && break
                     done <<< "$hop_output"
+                    
+                    local next_hop=""
                     if [[ -n "$next_jump" ]]; then
-                        full_chain="${next_jump} ➜ ${full_chain}"
-                        current_hop="${next_jump%%,*}"
+                        next_hop="${next_jump%%,*}"
+                        full_chain="${next_hop} ➜ ${full_chain}"
                     elif [[ -n "$next_cmd" ]]; then
-                        local next_hop=""
                         local -a hop_args=(${(z)next_cmd})
                         if [[ "${hop_args[1]}" == "ssh" ]]; then
-                            for arg in "${hop_args[@]:1}"; do
-                                [[ "$arg" != -* && "$arg" != *%* ]] && next_hop="$arg"
+                            for h_arg in "${hop_args[@]:1}"; do
+                                [[ "$h_arg" == -* || "$h_arg" == *%* || "$h_arg" == "nc" || "$h_arg" == "proxyconnect" ]] && continue
+                                next_hop="$h_arg"
+                                break
                             done
                         fi
-                        [[ -z "$next_hop" ]] && break
-                        full_chain="ssh(${next_hop}) ➜ ${full_chain}"
-                        current_hop="$next_hop"
-                    else
-                        break
+                        [[ -n "$next_hop" ]] && full_chain="${next_hop} ➜ ${full_chain}"
                     fi
+                    
+                    [[ -z "$next_hop" ]] && break
+                    current_hop="$next_hop"
                 done
                 config[proxyjump]="$full_chain"
                 [[ -n "$full_chain" ]] && config[proxycommand]=""
@@ -167,7 +171,7 @@ fi
 if ! command -v s >/dev/null 2>&1; then alias s='sshinfo'; fi
 if ! command -v connect >/dev/null 2>&1; then alias connect='sshinfo'; fi
 
-# Optional: alias ssh='sshinfo'
+alias ssh='sshinfo'
 
 _sshinfo_find_all_config_files() {
     local -a queue
@@ -187,7 +191,7 @@ _sshinfo_find_all_config_files() {
                     if [[ "$pattern" != /* && "$pattern" != ~* ]]; then
                         full_pattern="$config_dir/$pattern"
                     else
-                        full_pattern="${pattern/#	/$HOME}"
+                        full_pattern="${pattern/#\~/$HOME}"
                     fi
                     local -a found_files=(${~full_pattern}(N))
                     for f in "${found_files[@]}"; do
