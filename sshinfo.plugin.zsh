@@ -17,7 +17,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             fi
         done
 
-        if [ -z "$__target" ]; then
+        if [[ -z "$__target" ]]; then
             command ssh "$@"
             return
         fi
@@ -33,18 +33,11 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             RESET="$(tput sgr0)"
         fi
 
-        local __ssh_output
-        __ssh_output=$(command ssh -G "$__target" 2>/dev/null)
-        if [[ -z "$__ssh_output" ]]; then
-            echo "${RED}❌ Host '$__target' not found or error in SSH configuration.${RESET}"
-            command ssh "$@"
-            return $?
-        fi
-
         local -A __config
         local -a __identity_files __local_forwards __remote_forwards
         local __whitelist=("user" "hostname" "port" "proxyjump" "proxycommand" "dynamicforward")
 
+        # Use process substitution to avoid variable dumps
         while IFS= read -r line; do
             local key="${line%% *}" value="${line#* }"
             key="${key:l}"
@@ -57,25 +50,32 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             elif [[ "$key" == "remoteforward" ]]; then
                 __remote_forwards+=("$value")
             fi
-        done <<< "$__ssh_output"
+        done < <(command ssh -G "$__target" 2>/dev/null)
+
+        if [[ ${#__config} -eq 0 ]]; then
+            echo "${RED}❌ Host '$__target' not found or error in SSH configuration.${RESET}"
+            command ssh "$@"
+            return $?
+        fi
 
         local C_BOLD="\e[1m" C_DIM="\e[2m" C_GRAY="\e[38;5;242m" C_CYAN="\e[38;5;45m" C_PURPLE="\e[38;5;141m"
         
-        local __target_ip=""
         local __conf_host="${__config[hostname]}"
+        local __target_ip=""
         if [[ -n "$__conf_host" ]]; then
              __target_ip=$(getent hosts "$__conf_host" 2>/dev/null | awk '{print $1}' | head -n1)
              [[ -z "$__target_ip" ]] && __target_ip=$(dig +short "$__conf_host" 2>/dev/null | head -n1)
         fi
 
         local -a __hop_nodes
-        local __target_real
-        if [[ -n "$__conf_host" ]]; then __target_real="$__conf_host"; else __target_real="$__target"; fi
+        local __target_real="$__conf_host"
+        [[ -z "$__target_real" ]] && __target_real="$__target"
         __hop_nodes=("${C_BOLD}${__target}${RESET}${C_DIM} [${__target_real}]${RESET}")
 
         local __current_hop=""
         local __pj="${__config[proxyjump]}"
         local __pc="${__config[proxycommand]}"
+        
         if [[ -n "$__pj" ]]; then
             __current_hop="${__pj%%,*}"
         elif [[ -n "$__pc" ]]; then
@@ -97,51 +97,63 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             while (( __depth++ < 5 )); do
                 [[ -z "$__current_hop" || -n "${__seen_hops[$__current_hop]}" ]] && break
                 __seen_hops[$__current_hop]=1
-                local __h_output
-                __h_output=$(command ssh -G "$__current_hop" 2>/dev/null) || break
-                local __h_real="" __next_jump="" __next_cmd=""
+                
+                local __h_real="" __next_jump="" __next_cmd="" __found_hop=0
                 while IFS= read -r __h_line; do
+                    __found_hop=1
                     local __h_key="${__h_line%% *}" __h_val="${__h_line#* }"
-                    [[ "${__h_key:l}" == "hostname" ]] && __h_real="$__h_val"
-                    [[ "${__h_key:l}" == "proxyjump" ]] && __next_jump="$__h_val"
-                    [[ "${__h_key:l}" == "proxycommand" ]] && __next_cmd="$__h_val"
-                done <<< "$__h_output"
+                    __h_key="${__h_key:l}"
+                    [[ "$__h_key" == "hostname" ]] && __h_real="$__h_val"
+                    [[ "$__h_key" == "proxyjump" ]] && __next_jump="$__h_val"
+                    [[ "$__h_key" == "proxycommand" ]] && __next_cmd="$__h_val"
+                done < <(command ssh -G "$__current_hop" 2>/dev/null)
+                
+                [[ $__found_hop -eq 0 ]] && break
                 __hop_nodes=("${C_CYAN}${__current_hop}${RESET}${C_DIM} [${__h_real:-?}]${RESET}" "${__hop_nodes[@]}")
-                local __next_hop=""
+                
+                local __next_h_tmp=""
                 if [[ -n "$__next_jump" ]]; then
-                    __next_hop="${__next_jump%%,*}"
+                    __next_h_tmp="${__next_jump%%,*}"
                 elif [[ -n "$__next_cmd" ]]; then
                     local -a __h_args
                     __h_args=(${(z)__next_cmd})
                     if [[ "${__h_args[1]}" == "ssh" ]]; then
                         for h_arg in "${__h_args[@]:1}"; do
                             [[ "$h_arg" == -* || "$h_arg" == *%* || "$h_arg" == "nc" || "$h_arg" == "proxyconnect" ]] && continue
-                            __next_hop="$h_arg"
+                            __next_h_tmp="$h_arg"
                             break
                         done
                     fi
                 fi
-                [[ -z "$__next_hop" ]] && break
-                __current_hop="$__next_hop"
+                [[ -z "$__next_h_tmp" ]] && break
+                __current_hop="$__next_h_tmp"
             done
         fi
 
         echo "\n ${GREEN}🟢${RESET} ${C_BOLD}SSH Connection to ${C_CYAN}${__target}${RESET}"
         
-        local __has_conn=0 __has_auth=0 __has_proxy_info=0
-        [[ -n "${__config[user]}" || -n "${__config[hostname]}" || -n "${__config[port]}" ]] && __has_conn=1
-        (( ${#__identity_files[@]} > 0 )) && __has_auth=1
-        [[ -n "${__config[proxyjump]}" || -n "${__config[proxycommand]}" || -n "${__config[dynamicforward]}" || ${#__local_forwards[@]} -gt 0 || ${#__remote_forwards[@]} -gt 0 ]] && __has_proxy_info=1
+        local __user="${__config[user]}"
+        local __port="${__config[port]}"
+        local __df="${__config[dynamicforward]}"
+        local __has_conn=0 __has_auth=0 __has_proxy=0
         
-        local __total_sec=$((__has_conn + __has_auth + __has_proxy_info))
+        [[ -n "$__user" || -n "$__conf_host" || -n "$__port" ]] && __has_conn=1
+        (( ${#__identity_files[@]} > 0 )) && __has_auth=1
+        [[ -n "$__pj" || -n "$__pc" || -n "$__df" || ${#__local_forwards[@]} -gt 0 || ${#__remote_forwards[@]} -gt 0 ]] && __has_proxy=1
+        
+        local __total_sec=$((__has_conn + __has_auth + __has_proxy))
         local __cur_sec=0
 
         if (( __has_conn )); then
             __cur_sec=$((__cur_sec + 1))
             echo " ${C_GRAY}╭──${RESET} ${C_PURPLE}${C_BOLD}CONNECTION${RESET}"
-            [[ -n "${__config[user]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}👤${RESET} User     : ${C_BOLD}%s${RESET}\n" "${__config[user]}"
-            [[ -n "${__config[hostname]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}${__target_ip:+( $__target_ip)}${RESET}\n" "${__config[hostname]}"
-            [[ -n "${__config[port]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔌${RESET} Port     : %s\n" "${__config[port]}"
+            [[ -n "$__user" ]]      && printf " ${C_GRAY}│${RESET}  ${C_GRAY}👤${RESET} User     : ${C_BOLD}%s${RESET}\n" "$__user"
+            if [[ -n "$__conf_host" ]]; then
+                local __ip_display=""
+                [[ -n "$__target_ip" ]] && __ip_display=" ($__target_ip)"
+                printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}%s${RESET}\n" "$__conf_host" "$__ip_display"
+            fi
+            [[ -n "$__port" ]]      && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔌${RESET} Port     : %s\n" "$__port"
             echo " ${C_GRAY}│${RESET}"
         fi
 
@@ -160,7 +172,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             echo " ${C_GRAY}│${RESET}"
         fi
 
-        if (( __has_proxy_info )); then
+        if (( __has_proxy )); then
             __cur_sec=$((__cur_sec + 1))
             local __l_top="├──"
             (( __cur_sec == 1 )) && __l_top="╭──"
@@ -170,7 +182,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                 printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "${__hop_nodes[1]}"
                 for (( i=2; i <= ${#__hop_nodes[@]}; i++ )); do
                     local __ind=$(( 15 + (i-2)*6 ))
-                    printf " ${C_GRAY}│${RESET}%*s ${C_GRAY}╰─>${RESET} %b\n" $__ind "" "${__hop_nodes[i]}"
+                    printf " ${C_GRAY}│${RESET}%*s ${C_GRAY}╰─>${RESET} %b\n" "$__ind" "" "${__hop_nodes[i]}"
                 done
             else
                 local __inline=""
@@ -181,7 +193,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                 printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "$__inline"
             fi
 
-            [[ -n "${__config[dynamicforward]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}📡${RESET} Forward  : %s\n" "${__config[dynamicforward]}"
+            [[ -n "$__df" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}📡${RESET} Forward  : %s\n" "$__df"
             for lf in "${__local_forwards[@]}";  do printf " ${C_GRAY}│${RESET}  ${C_GRAY}↪${RESET} LocalFwd : %s\n" "$lf"; done
             for rf in "${__remote_forwards[@]}"; do printf " ${C_GRAY}│${RESET}  ${C_GRAY}↪${RESET} RemoteFwd: %s\n" "$rf"; done
         fi
@@ -203,15 +215,18 @@ _sshinfo_find_all_config_files() {
     while (( i <= ${#queue} )); do
         local file="${queue[i++]}"
         local config_dir="${file:h}"
-        local line
         while IFS= read -r line; do
             if [[ ${line:l} =~ '^[[:space:]]*include[[:space:]]' ]]; then
-                local patterns_str=${line#*[iI][nN][cC][lL][uU][dD][eE] }
+                local patterns_str="${line#[iI][nN][cC][lL][uU][dD][eE] }"
                 local -a patterns
                 patterns=("${(z)patterns_str}")
                 for pattern in "${patterns[@]}"; do
                     local full_pattern
-                    [[ "$pattern" != /* && "$pattern" != ~* ]] && full_pattern="$config_dir/$pattern" || full_pattern="${pattern/#	/$HOME}"
+                    if [[ "$pattern" != /* && "$pattern" != ~* ]]; then
+                        full_pattern="$config_dir/$pattern"
+                    else
+                        full_pattern="${pattern/#	/$HOME}"
+                    fi
                     local -a found_files=(${~full_pattern}(N))
                     for f in "${found_files[@]}"; do
                         local found=0
