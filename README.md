@@ -1,71 +1,86 @@
-# sshinfo for Oh My Zsh 🚀
+# zsh-sshinfo
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+A powerful and visually elegant Zsh plugin that summarizes your SSH connection details before connecting.
 
-`sshinfo` is a plugin for [Oh My Zsh](https://ohmyz.sh/) that enhances your `ssh` experience in two main ways:
-
-1.  **✅ Connection Info Display**: Before connecting, it shows you a clear, concise summary of the configuration that will be used (user, port, identity key, proxy, etc.). No more blind connections!
-2.  **⚡️ Smart Autocompletion**: It provides powerful and comprehensive `Tab` completion for all your SSH hosts.
-
----
+![Banner](https://img.shields.io/badge/ZSH-Plugin-blue?style=for-the-badge&logo=zsh)
+![Style](https://img.shields.io/badge/Design-Pixel_Perfect-cyan?style=for-the-badge)
 
 ## ✨ Features
 
--   **Pre-connection Visualization**: Displays connection details (User, HostName, Port, ProxyJump, etc.) right before the connection is established.
--   **Comprehensive Autocompletion**: Press `Tab` after `ssh` (or the `s`/`connect` aliases) to list all available hosts from:
-    -   Your `~/.ssh/config` file.
-    -   All files included via the `Include` directive (even recursively!).
-    -   Your `~/.ssh/known_hosts` file (while ignoring unreadable hashed hosts).
--   **Convenient Aliases**: Comes with `s` and `connect` aliases for even faster access.
--   **Customizable**: You can choose to override the base `ssh` command by uncommenting a line in the plugin.
+- **Pixel Perfect UI**: Clean, modern summary with Unicode borders and 256-color support.
+- **Recursive Tunnel Discovery**: Automatically resolves full ProxyJump/ProxyCommand chains.
+- **Dynamic Route Styles**: Choose between a vertical **Staircase** view or a compact **Inline** view.
+- **IP Resolution**: Automatically resolves hostnames to real IP addresses.
+- **Smart Completion**: Advanced tab-completion that follows `Include` directives and parses `known_hosts`.
+- **Non-Invasive**: Wraps `ssh` but stays out of your way for simple commands.
 
----
+## 🚀 Installation
 
-## 🛠️ Installation
+### Using [Oh My Zsh](https://ohmyz.sh/)
 
-1.  **Clone this repository** into your Oh My Zsh custom plugins directory:
-    ```bash
-    git clone https://github.com/sckyzo/zsh-sshinfo.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/sshinfo
-    ```
+1. Clone the repository into your custom plugins folder:
+   ```bash
+   git clone https://github.com/SckyzO/zsh-sshinfo.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/sshinfo
+   ```
+2. Add `sshinfo` to your plugins list in `~/.zshrc`:
+   ```zsh
+   plugins=(... sshinfo)
+   ```
+3. Restart your shell or run `omz reload`.
 
-2.  **Activate the plugin** by adding it to the plugins list in your `~/.zshrc` file:
-    ```zsh
-    plugins=(... sshinfo)
-    ```
-    *(Note: If you use the standard `ssh` plugin, make sure `sshinfo` is listed **after** it to ensure its autocompletion takes priority).*
+## ⚙️ Configuration
 
-3.  **Reload your Zsh configuration** for the changes to take effect:
-    ```bash
-    omz reload
-    ```
+### Display Styles
 
----
+You can set the default route display style by exporting `ZSH_SSHINFO_STYLE` in your `.zshrc`:
 
-## 🚀 Usage
+```zsh
+# Default is "staircase"
+export ZSH_SSHINFO_STYLE="inline"
+```
 
-Simply use `ssh`, `s`, or `connect` as you normally would.
+### On-the-fly Overrides
 
--   **To see connection info**:
-    ```bash
-    s my-remote-server
-    ```
-    ![Example Output](https://user-images.githubusercontent.com/example.png) *(Note: You may want to replace this with a real screenshot of the plugin in action)*
+You can override the style directly on the command line:
 
--   **To use autocompletion**:
-    ```bash
-    ssh <Tab>
-    # or
-    s my-remote-<Tab>
-    ```
+```bash
+ssh --inline my-host        # Force compact view
+ssh --staircase my-host     # Force tree view
+```
 
----
+## 📸 Preview
 
-## 🤝 Contributing
+### Staircase Mode (Default)
+```text
+ 󰔶 SSH Connection to production-db
 
-Suggestions and contributions are always welcome! Feel free to open an issue or a pull request.
+ ╭── CONNECTION
+ │  👤 User     : root
+ │  🌐 Host     : 10.0.5.2 (10.0.5.2)
+ │  🔌 Port     : 22
+ │
+ ├── SECURITY
+ │  🔑 Key      : ~/.ssh/id_ed25519
+ │
+ ├── NETWORK PATH
+ │  🛤️ Route    : bastion [194.57.10.1]
+ │                ╰─> production-db [10.0.5.2]
+ │
+ ╰───────────────────────────────────────────
+```
 
----
+### Inline Mode
+```text
+ ├── NETWORK PATH
+ │  🛤️ Route    : bastion [194.57.10.1] ➜ production-db [10.0.5.2]
+```
+
+## 🛠️ Requirements
+
+- **Zsh**
+- **Nerd Fonts** (recommended for icons like 󰔶, 👤, 🌐)
+- **ssh** (OpenSSH)
 
 ## 📄 License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE).
