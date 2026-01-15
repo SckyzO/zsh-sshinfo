@@ -3,28 +3,26 @@
 
 if ! command -v sshinfo >/dev/null 2>&1; then
     sshinfo() {
-        local target="" style="${ZSH_SSHINFO_STYLE:-staircase}"
-        local -a ssh_args
+        local __target="" __style="${ZSH_SSHINFO_STYLE:-staircase}"
+        local -a __ssh_args
         
-        # Parse arguments for style flags and target
         for arg in "$@"; do
             if [[ "$arg" == "--inline" ]]; then
-                style="inline"
+                __style="inline"
             elif [[ "$arg" == "--staircase" ]]; then
-                style="staircase"
+                __style="staircase"
             else
-                [[ "$arg" != -* ]] && target="$arg"
-                ssh_args+=("$arg")
+                [[ "$arg" != -* ]] && __target="$arg"
+                __ssh_args+=("$arg")
             fi
         done
 
-        if [ -z "$target" ]; then
+        if [ -z "$__target" ]; then
             command ssh "$@"
             return
         fi
 
-        # Update arguments to remove our custom flags
-        set -- "${ssh_args[@]}"
+        set -- "${__ssh_args[@]}"
 
         local GREEN BLUE YELLOW RED RESET
         if [[ -n "$TERM" && "$TERM" != "dumb" ]]; then
@@ -35,163 +33,148 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             RESET="$(tput sgr0)"
         fi
 
-        local ssh_output
-        if ! ssh_output=$(command ssh -G "$target" 2>/dev/null) || [ -z "$ssh_output" ]; then
-            echo "${RED}❌ Host '$target' not found or error in SSH configuration.${RESET}"
+        local __ssh_output
+        __ssh_output=$(command ssh -G "$__target" 2>/dev/null)
+        if [[ -z "$__ssh_output" ]]; then
+            echo "${RED}❌ Host '$__target' not found or error in SSH configuration.${RESET}"
             command ssh "$@"
             return $?
         fi
 
-        local -A config
-        local -a identity_files local_forwards remote_forwards
-        local whitelist=("user" "hostname" "port" "proxyjump" "proxycommand" "dynamicforward")
+        local -A __config
+        local -a __identity_files __local_forwards __remote_forwards
+        local __whitelist=("user" "hostname" "port" "proxyjump" "proxycommand" "dynamicforward")
 
         while IFS= read -r line; do
             local key="${line%% *}" value="${line#* }"
             key="${key:l}"
-
-            if [[ " ${whitelist[*]} " =~ " ${key} " ]]; then
-                config[$key]=$value
+            if [[ " ${__whitelist[*]} " =~ " ${key} " ]]; then
+                __config[$key]=$value
             elif [[ "$key" == "identityfile" ]]; then
-                identity_files+=("$value")
+                __identity_files+=("$value")
             elif [[ "$key" == "localforward" ]]; then
-                local_forwards+=("$value")
+                __local_forwards+=("$value")
             elif [[ "$key" == "remoteforward" ]]; then
-                remote_forwards+=("$value")
+                __remote_forwards+=("$value")
             fi
-        done <<< "$ssh_output"
+        done <<< "$__ssh_output"
 
-        # UI Styling
         local C_BOLD="\e[1m" C_DIM="\e[2m" C_GRAY="\e[38;5;242m" C_CYAN="\e[38;5;45m" C_PURPLE="\e[38;5;141m"
         
-        # Resolve target IP
-        local target_ip=""
-        if [[ -n "${config[hostname]}" ]]; then
-             target_ip=$(getent hosts "${config[hostname]}" 2>/dev/null | awk '{print $1}' | head -n1)
-             [[ -z "$target_ip" ]] && target_ip=$(dig +short "${config[hostname]}" 2>/dev/null | head -n1)
+        local __target_ip=""
+        if [[ -n "${__config[hostname]}" ]]; then
+             __target_ip=$(getent hosts "${__config[hostname]}" 2>/dev/null | awk '{print $1}' | head -n1)
+             [[ -z "$__target_ip" ]] && __target_ip=$(dig +short "${__config[hostname]}" 2>/dev/null | head -n1)
         fi
 
-        # Resolve full Proxy chain for Staircase display
-        local -a hop_nodes
-        local target_real="${config[hostname]:-$target}"
-        hop_nodes=("${C_BOLD}${target}${RESET}${C_DIM} [${target_real}]${RESET}")
+        local -a __hop_nodes
+        local __target_real="${__config[hostname]:-$__target}"
+        __hop_nodes=("${C_BOLD}${__target}${RESET}${C_DIM} [${__target_real}]${RESET}")
 
-        local current_hop=""
-        if [[ -n "${config[proxyjump]}" ]]; then
-            current_hop="${config[proxyjump]%%,*}"
+        local __current_hop=""
+        if [[ -n "${__config[proxyjump]}" ]]; then
+            __current_hop="${__config[proxyjump]%%,*}"
         else
-            local -a args=(${(z)config[proxycommand]})
-            if [[ "${args[1]}" == "ssh" ]]; then
-                for arg in "${args[@]:1}"; do
+            local -a __args=(${(z)${__config[proxycommand]}})
+            if [[ "${__args[1]}" == "ssh" ]]; then
+                for arg in "${__args[@]:1}"; do
                     [[ "$arg" == -* || "$arg" == *%* || "$arg" == "nc" || "$arg" == "proxyconnect" ]] && continue
-                    current_hop="$arg"
+                    __current_hop="$arg"
                     break
                 done
             fi
         fi
 
-        if [[ -n "$current_hop" ]]; then
-            local -A seen_hops
-            seen_hops[$target]=1
-            local depth=0
-            while (( depth++ < 5 )); do
-                [[ -z "$current_hop" || -n "${seen_hops[$current_hop]}" ]] && break
-                seen_hops[$current_hop]=1
-                local hop_output
-                hop_output=$(command ssh -G "$current_hop" 2>/dev/null) || break
-                
-                local hop_real="" next_jump="" next_cmd=""
-                while IFS= read -r hop_line; do
-                    local h_key="${hop_line%% *}" h_val="${hop_line#* }"
-                    [[ "${h_key:l}" == "hostname" ]] && hop_real="$h_val"
-                    [[ "${h_key:l}" == "proxyjump" ]] && next_jump="$h_val"
-                    [[ "${h_key:l}" == "proxycommand" ]] && next_cmd="$h_val"
-                done <<EOF
-$hop_output
-EOF
-                
-                hop_nodes=("${C_CYAN}${current_hop}${RESET}${C_DIM} [${hop_real:-?}]${RESET}" "${hop_nodes[@]}")
-                
-                local next_hop=""
-                if [[ -n "$next_jump" ]]; then
-                    next_hop="${next_jump%%,*}"
-                elif [[ -n "$next_cmd" ]]; then
-                    local -a hop_args=(${(z)next_cmd})
-                    [[ "${hop_args[1]}" == "ssh" ]] && for h_arg in "${hop_args[@]:1}"; do
+        if [[ -n "$__current_hop" ]]; then
+            local -A __seen_hops
+            __seen_hops[$__target]=1
+            local __depth=0
+            while (( __depth++ < 5 )); do
+                [[ -z "$__current_hop" || -n "${__seen_hops[$__current_hop]}" ]] && break
+                __seen_hops[$__current_hop]=1
+                local __h_output
+                __h_output=$(command ssh -G "$__current_hop" 2>/dev/null) || break
+                local __h_real="" __next_jump="" __next_cmd=""
+                while IFS= read -r __h_line; do
+                    local __h_key="${__h_line%% *}" __h_val="${__h_line#* }"
+                    [[ "${__h_key:l}" == "hostname" ]] && __h_real="$__h_val"
+                    [[ "${__h_key:l}" == "proxyjump" ]] && __next_jump="$__h_val"
+                    [[ "${__h_key:l}" == "proxycommand" ]] && __next_cmd="$__h_val"
+                done <<< "$__h_output"
+                __hop_nodes=("${C_CYAN}${__current_hop}${RESET}${C_DIM} [${__h_real:-?}]${RESET}" "${__hop_nodes[@]}")
+                local __next_hop=""
+                if [[ -n "$__next_jump" ]]; then
+                    __next_hop="${__next_jump%%,*}"
+                elif [[ -n "$__next_cmd" ]]; then
+                    local -a __h_args=(${(z)$__next_cmd})
+                    [[ "${__h_args[1]}" == "ssh" ]] && for h_arg in "${__h_args[@]:1}"; do
                         [[ "$h_arg" == -* || "$h_arg" == *%* || "$h_arg" == "nc" || "$h_arg" == "proxyconnect" ]] && continue
-                        next_hop="$h_arg"; break
+                        __next_hop="$h_arg"; break
                     done
                 fi
-                [[ -z "$next_hop" ]] && break
-                current_hop="$next_hop"
+                [[ -z "$__next_hop" ]] && break
+                __current_hop="$__next_hop"
             done
         fi
 
-        echo "\n ${GREEN}󰔶${RESET} ${C_BOLD}SSH Connection to ${C_CYAN}${target}${RESET}"
+        echo "\n ${GREEN}🟢${RESET} ${C_BOLD}SSH Connection to ${C_CYAN}${__target}${RESET}"
         
-        local has_connection_info=0
-        local has_auth_info=0
-        local has_proxy_info=0
-
-        [[ -n "${config[user]}" || -n "${config[hostname]}" || -n "${config[port]}" ]] && has_connection_info=1
-        (( ${#identity_files[@]} > 0 )) && has_auth_info=1
-        [[ -n "${config[proxyjump]}" || -n "${config[proxycommand]}" || -n "${config[dynamicforward]}" || ${#local_forwards[@]} -gt 0 || ${#remote_forwards[@]} -gt 0 ]] && has_proxy_info=1
+        local __has_conn=0 __has_auth=0 __has_proxy=0
+        [[ -n "${__config[user]}" || -n "${__config[hostname]}" || -n "${__config[port]}" ]] && __has_conn=1
+        (( ${#__identity_files[@]} > 0 )) && __has_auth=1
+        [[ -n "${__config[proxyjump]}" || -n "${__config[proxycommand]}" || -n "${__config[dynamicforward]}" || ${#__local_forwards[@]} -gt 0 || ${#__remote_forwards[@]} -gt 0 ]] && __has_proxy_info=1
         
-        local total_sections=$((has_connection_info + has_auth_info + has_proxy_info))
-        local current_section=0
+        local __total_sec=$((__has_conn + __has_auth + __has_proxy_info))
+        local __cur_sec=0
 
-        if (( has_connection_info )); then
-            current_section=$((current_section + 1))
+        if (( __has_conn )); then
+            __cur_sec=$((__cur_sec + 1))
             echo " ${C_GRAY}╭──${RESET} ${C_PURPLE}${C_BOLD}CONNECTION${RESET}"
-            [[ -n "${config[user]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}👤${RESET} User     : ${C_BOLD}%s${RESET}\n" "${config[user]}"
-            [[ -n "${config[hostname]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}${target_ip:+ ($target_ip)}${RESET}\n" "${config[hostname]}"
-            [[ -n "${config[port]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔌${RESET} Port     : %s\n" "${config[port]}"
+            [[ -n "${__config[user]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}👤${RESET} User     : ${C_BOLD}%s${RESET}\n" "${__config[user]}"
+            [[ -n "${__config[hostname]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}${__target_ip:+(}$__target_ip)${RESET}\n" "${__config[hostname]}"
+            [[ -n "${__config[port]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔌${RESET} Port     : %s\n" "${__config[port]}"
             echo " ${C_GRAY}│${RESET}"
         fi
 
-        if (( has_auth_info )); then
-            current_section=$((current_section + 1))
-            local label_top="├──"
-            (( current_section == 1 )) && label_top="╭──"
-            echo " ${C_GRAY}${label_top}${RESET} ${C_PURPLE}${C_BOLD}SECURITY${RESET}"
-            if (( ${#identity_files[@]} > 1 )); then
+        if (( __has_auth )); then
+            __cur_sec=$((__cur_sec + 1))
+            local __l_top="├──"
+            (( __cur_sec == 1 )) && __l_top="╭──"
+            echo " ${C_GRAY}${__l_top}${RESET} ${C_PURPLE}${C_BOLD}SECURITY${RESET}"
+            if (( ${#__identity_files[@]} > 1 )); then
                 printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔑${RESET} Key      : %s\n" "Default (~/.ssh/id_*)"
             else
-                local key_path="${identity_files[1]}"
-                key_path="${key_path/#$HOME/~}"
-                printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔑${RESET} Key      : %s\n" "$key_path"
+                local __k_path="${__identity_files[1]}"
+                __k_path="${__k_path/#$HOME/~}"
+                printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔑${RESET} Key      : %s\n" "$__k_path"
             fi
             echo " ${C_GRAY}│${RESET}"
         fi
 
-        if (( has_proxy_info )); then
-            current_section=$((current_section + 1))
-            local label_top="├──"
-            (( current_section == 1 )) && label_top="╭──"
-            echo " ${C_GRAY}${label_top}${RESET} ${C_PURPLE}${C_BOLD}NETWORK PATH${RESET}"
+        if (( __has_proxy_info )); then
+            __cur_sec=$((__cur_sec + 1))
+            local __l_top="├──"
+            (( __cur_sec == 1 )) && __l_top="╭──"
+            echo " ${C_GRAY}${__l_top}${RESET} ${C_PURPLE}${C_BOLD}NETWORK PATH${RESET}"
             
-            # Print route based on selected style
-            if [[ "$style" == "staircase" ]]; then
-                printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "${hop_nodes[1]}"
-                for (( i=2; i <= ${#hop_nodes[@]}; i++ )); do
-                    # Indent set to 16 to align perfectly under the first host
-                    local indent=$(( 16 + (i-2)*6 ))
-                    printf " ${C_GRAY}│${RESET}%*s ${C_GRAY}╰─>${RESET} %b\n" $indent "" "${hop_nodes[i]}"
+            if [[ "$__style" == "staircase" ]]; then
+                printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "${__hop_nodes[1]}"
+                for (( i=2; i <= ${#__hop_nodes[@]}; i++ )); do
+                    local __ind=$(( 15 + (i-2)*6 ))
+                    printf " ${C_GRAY}│${RESET}%*s ${C_GRAY}╰─>${RESET} %b\n" $__ind "" "${__hop_nodes[i]}"
                 done
             else
-                local inline_route=""
-                for (( i=1; i <= ${#hop_nodes[@]}; i++ )); do
-                    inline_route+="${hop_nodes[i]}"
-                    # Added an extra space after the arrow as requested
-                    (( i < ${#hop_nodes[@]} )) && inline_route+=" ${C_GRAY}➜${RESET}  "
+                local __inline=""
+                for (( i=1; i <= ${#__hop_nodes[@]}; i++ )); do
+                    __inline+="${__hop_nodes[i]}"
+                    (( i < ${#__hop_nodes[@]} )) && __inline+=" ${C_GRAY}➜${RESET}  "
                 done
-                printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "$inline_route"
+                printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "$__inline"
             fi
 
-            [[ -n "${config[proxycommand]}" && -z "${config[proxyjump]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}󱘖${RESET} ProxyCmd : %s\n" "${config[proxycommand]}"
-            [[ -n "${config[dynamicforward]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}📡${RESET} Forward  : %s\n" "${config[dynamicforward]}"
-            for lf in "${local_forwards[@]}";  do printf " ${C_GRAY}│${RESET}  󱘖  LocalFwd : %s\n" "$lf"; done
-            for rf in "${remote_forwards[@]}"; do printf " ${C_GRAY}│${RESET}  󱘖  RemoteFwd: %s\n" "$rf"; done
+            [[ -n "${__config[dynamicforward]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}📡${RESET} Forward  : %s\n" "${__config[dynamicforward]}"
+            for lf in "${__local_forwards[@]}";  do printf " ${C_GRAY}│${RESET}  ${C_GRAY}↪${RESET} LocalFwd : %s\n" "$lf"; done
+            for rf in "${__remote_forwards[@]}"; do printf " ${C_GRAY}│${RESET}  ${C_GRAY}↪${RESET} RemoteFwd: %s\n" "$rf"; done
         fi
         echo " ${C_GRAY}╰───────────────────────────────────────────${RESET}\n"
         command ssh "$@"
@@ -215,14 +198,10 @@ _sshinfo_find_all_config_files() {
         while IFS= read -r line; do
             if [[ ${line:l} =~ '^[[:space:]]*include[[:space:]]' ]]; then
                 local patterns_str=${line#*[iI][nN][cC][lL][uU][dD][eE] }
-                local -a patterns=("${(z)patterns_str}")
+                local -a patterns=("${(z)$patterns_str}")
                 for pattern in "${patterns[@]}"; do
                     local full_pattern
-                    if [[ "$pattern" != /* && "$pattern" != ~* ]]; then
-                        full_pattern="$config_dir/$pattern"
-                    else
-                        full_pattern="${pattern/#\~/$HOME}"
-                    fi
+                    [[ "$pattern" != /* && "$pattern" != ~* ]] && full_pattern="$config_dir/$pattern" || full_pattern="${pattern/#	/$HOME}"
                     local -a found_files=(${~full_pattern}(N))
                     for f in "${found_files[@]}"; do
                         local found=0
@@ -240,14 +219,7 @@ _sshinfo_find_all_config_files() {
 }
 
 _sshinfo_parse_hosts_from_files() {
-    awk \
-        '/^[[:space:]]*($|#)/{next} 
-        tolower($1)=="host"{
-            for(i=2;i<=NF;i++){
-                if(substr($i,1,1)=="#")break;
-                if($i!~/[*?]/&&$i!~/^!/)print $i
-            }
-        }' "$@" 2>/dev/null
+    awk '/^[[:space:]]*($|#)/{next} tolower($1)=="host"{for(i=2;i<=NF;i++){if(substr($i,1,1)=="#")break;if($i!~/[*?]/&&$i!~/^!/)print $i}}' "$@" 2>/dev/null
 }
 
 _sshinfo_complete() {
