@@ -70,19 +70,18 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                 local -A seen_hops
                 seen_hops[$target]=1
                 local depth=0
+                local _ssh_hop_config next_jump next_cmd next_hop
                 while (( depth++ < 5 )); do
                     [[ -z "$current_hop" || -n "${seen_hops[$current_hop]}" ]] && break
                     seen_hops[$current_hop]=1
-                    local hop_output
-                    hop_output=$(command ssh -G "$current_hop" 2>/dev/null) || break
-                    local next_jump="" next_cmd=""
+                    _ssh_hop_config=$(command ssh -G "$current_hop" 2>/dev/null) || break
+                    next_jump="" next_cmd="" next_hop=""
                     while IFS= read -r hop_line; do
                         local key="${hop_line%% *}" val="${hop_line#* }"
                         [[ "${key:l}" == "proxyjump" ]] && next_jump="$val" && break
                         [[ "${key:l}" == "proxycommand" ]] && next_cmd="$val" && break
-                    done <<< "$hop_output"
+                    done <<< "$_ssh_hop_config"
                     
-                    local next_hop=""
                     if [[ -n "$next_jump" ]]; then
                         next_hop="${next_jump%%,*}"
                         full_chain="${next_hop} ➜ ${full_chain}"
