@@ -178,8 +178,13 @@ _sshinfo_find_all_config_files() {
                 for pattern in "${patterns[@]}"; do
                     local full_pattern
                     # Prepend the parent directory path if the pattern is relative.
-                    [[ "$pattern" != /* && "$pattern" != ~* ]] && full_pattern="$config_dir/$pattern" || full_pattern="$pattern"
-                    # Expand tilde and globs to find all matching files.
+                    if [[ "$pattern" != /* && "$pattern" != ~* ]]; then
+                        full_pattern="$config_dir/$pattern"
+                    else
+                        # Explicitly expand tilde to $HOME if present at the start.
+                        full_pattern="${pattern/#\~/$HOME}"
+                    fi
+                    # Expand globs to find all matching files.
                     local -a found_files=(${~full_pattern}(N))
                     for f in "${found_files[@]}"; do
                         # Check if the file is a real file and hasn't been seen before.
