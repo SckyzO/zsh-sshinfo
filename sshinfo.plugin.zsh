@@ -69,7 +69,8 @@ if ! command -v sshinfo >/dev/null 2>&1; then
         fi
 
         local -a __hop_nodes
-        local __target_real="${__conf_host:-$__target}"
+        local __target_real
+        if [[ -n "$__conf_host" ]]; then __target_real="$__conf_host"; else __target_real="$__target"; fi
         __hop_nodes=("${C_BOLD}${__target}${RESET}${C_DIM} [${__target_real}]${RESET}")
 
         local __current_hop=""
@@ -79,7 +80,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             __current_hop="${__pj%%,*}"
         elif [[ -n "$__pc" ]]; then
             local -a __args
-            __args=(${(z)$__pc})
+            __args=(${(z)__pc})
             if [[ "${__args[1]}" == "ssh" ]]; then
                 for arg in "${__args[@]:1}"; do
                     [[ "$arg" == -* || "$arg" == *%* || "$arg" == "nc" || "$arg" == "proxyconnect" ]] && continue
@@ -153,7 +154,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                 printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔑${RESET} Key      : %s\n" "Default (~/.ssh/id_*)"
             else
                 local __k_path="${__identity_files[1]}"
-                __k_path="${__k_path/#$HOME/~}"
+                [[ -n "$__k_path" ]] && __k_path="${__k_path/#$HOME/~}"
                 printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔑${RESET} Key      : %s\n" "$__k_path"
             fi
             echo " ${C_GRAY}│${RESET}"
