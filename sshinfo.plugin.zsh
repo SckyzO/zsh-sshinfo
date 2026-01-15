@@ -102,11 +102,13 @@ if ! command -v sshinfo >/dev/null 2>&1; then
                 
                 local hop_real="" next_jump="" next_cmd=""
                 while IFS= read -r hop_line; do
-                    local key="${hop_line%% *}" val="${hop_line#* }"
-                    [[ "${key:l}" == "hostname" ]] && hop_real="$val"
-                    [[ "${key:l}" == "proxyjump" ]] && next_jump="$val"
-                    [[ "${key:l}" == "proxycommand" ]] && next_cmd="$val"
-                done <<< "$hop_output"
+                    local h_key="${hop_line%% *}" h_val="${hop_line#* }"
+                    [[ "${h_key:l}" == "hostname" ]] && hop_real="$h_val"
+                    [[ "${h_key:l}" == "proxyjump" ]] && next_jump="$h_val"
+                    [[ "${h_key:l}" == "proxycommand" ]] && next_cmd="$h_val"
+                done <<EOF
+$hop_output
+EOF
                 
                 hop_nodes=("${C_CYAN}${current_hop}${RESET}${C_DIM} [${hop_real:-?}]${RESET}" "${hop_nodes[@]}")
                 
@@ -142,7 +144,7 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             current_section=$((current_section + 1))
             echo " ${C_GRAY}╭──${RESET} ${C_PURPLE}${C_BOLD}CONNECTION${RESET}"
             [[ -n "${config[user]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}👤${RESET} User     : ${C_BOLD}%s${RESET}\n" "${config[user]}"
-            [[ -n "${config[hostname]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}${target_ip:+( $target_ip)}${RESET}\n" "${config[hostname]}"
+            [[ -n "${config[hostname]}" ]] && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🌐${RESET} Host     : ${C_BOLD}%s${RESET}${C_DIM}${target_ip:+ ($target_ip)}${RESET}\n" "${config[hostname]}"
             [[ -n "${config[port]}" ]]     && printf " ${C_GRAY}│${RESET}  ${C_GRAY}🔌${RESET} Port     : %s\n" "${config[port]}"
             echo " ${C_GRAY}│${RESET}"
         fi
@@ -172,14 +174,16 @@ if ! command -v sshinfo >/dev/null 2>&1; then
             if [[ "$style" == "staircase" ]]; then
                 printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "${hop_nodes[1]}"
                 for (( i=2; i <= ${#hop_nodes[@]}; i++ )); do
-                    local indent=$(( 11 + (i-2)*6 ))
+                    # Indent set to 16 to align perfectly under the first host
+                    local indent=$(( 16 + (i-2)*6 ))
                     printf " ${C_GRAY}│${RESET}%*s ${C_GRAY}╰─>${RESET} %b\n" $indent "" "${hop_nodes[i]}"
                 done
             else
                 local inline_route=""
                 for (( i=1; i <= ${#hop_nodes[@]}; i++ )); do
                     inline_route+="${hop_nodes[i]}"
-                    (( i < ${#hop_nodes[@]} )) && inline_route+=" ${C_GRAY}➜${RESET} "
+                    # Added an extra space after the arrow as requested
+                    (( i < ${#hop_nodes[@]} )) && inline_route+=" ${C_GRAY}➜${RESET}  "
                 done
                 printf " ${C_GRAY}│${RESET}  ${C_GRAY}🛤️${RESET} Route    : %b\n" "$inline_route"
             fi
@@ -217,7 +221,7 @@ _sshinfo_find_all_config_files() {
                     if [[ "$pattern" != /* && "$pattern" != ~* ]]; then
                         full_pattern="$config_dir/$pattern"
                     else
-                        full_pattern="${pattern/#	/$HOME}"
+                        full_pattern="${pattern/#\~/$HOME}"
                     fi
                     local -a found_files=(${~full_pattern}(N))
                     for f in "${found_files[@]}"; do
