@@ -62,21 +62,24 @@ if ! command -v sshinfo >/dev/null 2>&1; then
         local C_BOLD="\e[1m" C_DIM="\e[2m" C_GRAY="\e[38;5;242m" C_CYAN="\e[38;5;45m" C_PURPLE="\e[38;5;141m"
         
         local __target_ip=""
-        if [[ -n "${__config[hostname]}" ]]; then
-             __target_ip=$(getent hosts "${__config[hostname]}" 2>/dev/null | awk '{print $1}' | head -n1)
-             [[ -z "$__target_ip" ]] && __target_ip=$(dig +short "${__config[hostname]}" 2>/dev/null | head -n1)
+        local __conf_host="${__config[hostname]}"
+        if [[ -n "$__conf_host" ]]; then
+             __target_ip=$(getent hosts "$__conf_host" 2>/dev/null | awk '{print $1}' | head -n1)
+             [[ -z "$__target_ip" ]] && __target_ip=$(dig +short "$__conf_host" 2>/dev/null | head -n1)
         fi
 
         local -a __hop_nodes
-        local __target_real="${__config[hostname]:-$__target}"
+        local __target_real="${__conf_host:-$__target}"
         __hop_nodes=("${C_BOLD}${__target}${RESET}${C_DIM} [${__target_real}]${RESET}")
 
         local __current_hop=""
-        if [[ -n "${__config[proxyjump]}" ]]; then
-            __current_hop="${__config[proxyjump]%%,*}"
-        elif [[ -n "${__config[proxycommand]}" ]]; then
+        local __pj="${__config[proxyjump]}"
+        local __pc="${__config[proxycommand]}"
+        if [[ -n "$__pj" ]]; then
+            __current_hop="${__pj%%,*}"
+        elif [[ -n "$__pc" ]]; then
             local -a __args
-            __args=(${(z)$__config[proxycommand]})
+            __args=(${(z)$__pc})
             if [[ "${__args[1]}" == "ssh" ]]; then
                 for arg in "${__args[@]:1}"; do
                     [[ "$arg" == -* || "$arg" == *%* || "$arg" == "nc" || "$arg" == "proxyconnect" ]] && continue
@@ -204,10 +207,10 @@ _sshinfo_find_all_config_files() {
             if [[ ${line:l} =~ '^[[:space:]]*include[[:space:]]' ]]; then
                 local patterns_str=${line#*[iI][nN][cC][lL][uU][dD][eE] }
                 local -a patterns
-                patterns=("${(z)$patterns_str}")
+                patterns=("${(z)patterns_str}")
                 for pattern in "${patterns[@]}"; do
                     local full_pattern
-                    [[ "$pattern" != /* && "$pattern" != ~* ]] && full_pattern="$config_dir/$pattern" || full_pattern="${pattern/#\~/$HOME}"
+                    [[ "$pattern" != /* && "$pattern" != ~* ]] && full_pattern="$config_dir/$pattern" || full_pattern="${pattern/#	/$HOME}"
                     local -a found_files=(${~full_pattern}(N))
                     for f in "${found_files[@]}"; do
                         local found=0
